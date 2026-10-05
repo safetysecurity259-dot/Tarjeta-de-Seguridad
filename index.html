@@ -131,9 +131,6 @@
       <h2>Descripción</h2>
       <label>Descripción anomalía</label>
       <textarea id="descripcionAnomalia" required></textarea>
-
-      <label>Acción propuesta / mejora</label>
-      <textarea id="accionPropuesta"></textarea>
     </div>
 
     <div class="card">
@@ -144,6 +141,11 @@
     </div>
 
     <div class="card">
+      <h2>Condición detectada</h2>
+      <div class="checklist" id="condicionDetectadaList"></div>
+    </div>
+
+    <div class="card">
       <h2>Consecuencia potencial</h2>
       <div class="checklist" id="consecuenciaPotencialList"></div>
       <label>Otro</label>
@@ -151,51 +153,13 @@
     </div>
 
     <div class="card">
-      <h2>Prioridad, estado y ejecutor</h2>
-      <label>Prioridad</label>
+      <h2>Prioridad</h2>
       <div class="radiogrid" id="prioridadList"></div>
-
-      <label>Estado instalación</label>
-      <div class="radiogrid" id="estadoList"></div>
-
-      <label>Ejecutor</label>
-      <div class="radiogrid" id="ejecutorList"></div>
     </div>
 
     <div class="card">
-      <h2>Responsable y validación</h2>
-      <label>Nombre responsable</label>
-      <input type="text" id="nombreResponsable">
-
-      <div class="row2">
-        <div>
-          <label>Fecha extrema (Plan)</label>
-          <input type="date" id="fechaExtremaPlan">
-        </div>
-        <div>
-          <label>Fecha fin extrema (Real)</label>
-          <input type="date" id="fechaFinExtremaReal">
-        </div>
-      </div>
-
-      <label>Nombre validador</label>
-      <input type="text" id="nombreValidador">
-
-      <div class="row2">
-        <div>
-          <label>Fecha validación</label>
-          <input type="date" id="fechaValidacion">
-        </div>
-        <div>
-          <label>N° OT</label>
-          <input type="text" id="numeroOT">
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Acción realizada</h2>
-      <div class="checklist" id="accionRealizadaList"></div>
+      <h2>Acción propuesta</h2>
+      <div class="checklist" id="accionPropuestaOpcionesList"></div>
     </div>
   </form>
 
@@ -220,6 +184,7 @@ const AREAS = [
   'Oficinas', 'Camarines', 'Baños', 'Sala de Baterias', 'Tablero electrico', 'Perimetro exterior'
 ];
 const PASILLOS = [
+  'No aplica',
   '101','102','103','104','105','106','107','108','109','110',
   '111','112','113','114','115','116',
   '124','125','126','127','128','129','130','131','132'
@@ -233,6 +198,11 @@ const PELIGRO_DETECTADO = [
   'Escaleras, rampas y andenes', 'Vías de evacuación', 'Iluminación', 'Servicios básicos',
   'Señalización', 'Condiciones de orden y aseo', 'Condiciones climáticas', 'Instalaciones de faena'
 ];
+const CONDICION_DETECTADA = [
+  'Pallet con riesgo de caída', 'Obstrucción extintor', 'Obstrucción red húmeda',
+  'Obstrucción pulsador emergencia', 'Obstrucción vía de evacuación', 'Enchufe mal estado',
+  'Herramienta dañada', 'Equipo de levante con daño'
+];
 const CONSECUENCIA_POTENCIAL = [
   'Caída', 'Golpe', 'Corte', 'Colisión, choque o atropello', 'Atrapamiento',
   'Sobreesfuerzo', 'Incendio', 'Explosión', 'Exposición a ruido',
@@ -240,9 +210,11 @@ const CONSECUENCIA_POTENCIAL = [
   'Proyección de partículas', 'Exposición a humo', 'Exposición a vapor',
   'Daño a equipos', 'Daño ambiental'
 ];
+const ACCION_PROPUESTA_OPCIONES = [
+  'Despeje', 'Contención de la condición', 'Eliminar la condición',
+  'Sustitución del equipo/herramienta', 'Reparación', 'Demarcación', 'Señalización'
+];
 const PRIORIDADES = ['Alta (2d)', 'Media Alta (7d)', 'Media Baja (14d)', 'Baja (60d)'];
-const ESTADOS = ['Detenido', 'Funcionamiento'];
-const EJECUTORES = ['GTA', 'GTM'];
 
 function buildChecklist(containerId, items, name){
   const el = document.getElementById(containerId);
@@ -274,11 +246,10 @@ function highlightPill(name){
 buildSelect('area', AREAS, 'Selecciona un área');
 buildSelect('pasillo', PASILLOS, 'Selecciona un pasillo');
 buildChecklist('peligroDetectadoList', PELIGRO_DETECTADO, 'peligroDetectado');
+buildChecklist('condicionDetectadaList', CONDICION_DETECTADA, 'condicionDetectada');
 buildChecklist('consecuenciaPotencialList', CONSECUENCIA_POTENCIAL, 'consecuenciaPotencial');
-buildChecklist('accionRealizadaList', PELIGRO_DETECTADO, 'accionRealizada');
+buildChecklist('accionPropuestaOpcionesList', ACCION_PROPUESTA_OPCIONES, 'accionPropuestaOpciones');
 buildRadios('prioridadList', PRIORIDADES, 'prioridad');
-buildRadios('estadoList', ESTADOS, 'estado');
-buildRadios('ejecutorList', EJECUTORES, 'ejecutor');
 
 document.getElementById('fechaAviso').valueAsDate = new Date();
 
@@ -360,14 +331,12 @@ function collectData(){
   return {
     area: val('area'), pasillo: val('pasillo'), autorAviso: val('autorAviso'),
     fechaAviso: val('fechaAviso'), descripcionAnomalia: val('descripcionAnomalia'),
-    accionPropuesta: val('accionPropuesta'), peligroDetectado: checked('peligroDetectado'),
-    otroPeligro: val('otroPeligro'), consecuenciaPotencial: checked('consecuenciaPotencial'),
+    peligroDetectado: checked('peligroDetectado'),
+    otroPeligro: val('otroPeligro'), condicionDetectada: checked('condicionDetectada'),
+    consecuenciaPotencial: checked('consecuenciaPotencial'),
     otroConsecuencia: val('otroConsecuencia'),
-    prioridad: radio('prioridad'), estadoInstalacion: radio('estado'),
-    ejecutor: radio('ejecutor'), nombreResponsable: val('nombreResponsable'),
-    fechaExtremaPlan: val('fechaExtremaPlan'), fechaFinExtremaReal: val('fechaFinExtremaReal'),
-    nombreValidador: val('nombreValidador'), fechaValidacion: val('fechaValidacion'),
-    numeroOT: val('numeroOT'), accionRealizada: checked('accionRealizada')
+    prioridad: radio('prioridad'),
+    accionPropuestaOpciones: checked('accionPropuestaOpciones')
   };
 }
 
@@ -397,19 +366,11 @@ function generarPDF(data, correlativo){
   field('Autor aviso', data.autorAviso);
   field('Fecha aviso', data.fechaAviso);
   field('Descripción anomalía', data.descripcionAnomalia);
-  field('Acción propuesta / mejora', data.accionPropuesta);
   field('Peligro Detectado', (data.peligroDetectado||[]).join(', ') + (data.otroPeligro ? `, Otro: ${data.otroPeligro}` : ''));
+  field('Condición detectada', (data.condicionDetectada||[]).join(', '));
   field('Consecuencia potencial', (data.consecuenciaPotencial||[]).join(', ') + (data.otroConsecuencia ? `, Otro: ${data.otroConsecuencia}` : ''));
   field('Prioridad', data.prioridad);
-  field('Estado instalación', data.estadoInstalacion);
-  field('Ejecutor', data.ejecutor);
-  field('Nombre responsable', data.nombreResponsable);
-  field('Fecha extrema (Plan)', data.fechaExtremaPlan);
-  field('Fecha fin extrema (Real)', data.fechaFinExtremaReal);
-  field('Nombre validador', data.nombreValidador);
-  field('Fecha validación', data.fechaValidacion);
-  field('N° OT', data.numeroOT);
-  field('Acción realizada', (data.accionRealizada||[]).join(', '));
+  field('Acción propuesta', (data.accionPropuestaOpciones||[]).join(', '));
 
   return doc;
 }
