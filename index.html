@@ -343,34 +343,148 @@ function collectData(){
 function generarPDF(data, correlativo){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-  const margin = 40; let y = 50;
-  const lineH = 16;
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 40;
+  const contentW = pageW - margin * 2;
 
-  doc.setFontSize(16); doc.setTextColor(192,39,45);
-  doc.text('TARJETA DE SEGURIDAD', margin, y); y += 4;
-  doc.setFontSize(10); doc.setTextColor(80);
-  doc.text(`Código: ${CODIGO_TARJETA}   N° Aviso: ${correlativo}   Safety & Security`, margin, y+16);
-  y += 40;
+  const ROJO = [192, 39, 45];
+  const GRIS = [245, 246, 247];
+  const BORDE = [216, 220, 224];
+  const TEXTO = [26, 26, 26];
+  const GRIS_TEXTO = [110, 110, 110];
 
-  function field(label, value){
-    doc.setFontSize(10); doc.setTextColor(90);
-    doc.text(label, margin, y);
-    doc.setFontSize(11); doc.setTextColor(20);
-    doc.text(String(value || '-'), margin, y + 14, { maxWidth: 515 });
-    y += 32;
-    if(y > 760){ doc.addPage(); y = 50; }
+  let y = 0;
+
+  function checkPageBreak(neededH){
+    if (y + neededH > pageH - 40) { doc.addPage(); y = 40; }
   }
 
-  field('Área', data.area);
-  field('Pasillo', data.pasillo);
-  field('Autor aviso', data.autorAviso);
-  field('Fecha aviso', data.fechaAviso);
-  field('Descripción anomalía', data.descripcionAnomalia);
-  field('Peligro Detectado', (data.peligroDetectado||[]).join(', ') + (data.otroPeligro ? `, Otro: ${data.otroPeligro}` : ''));
-  field('Condición detectada', (data.condicionDetectada||[]).join(', '));
-  field('Consecuencia potencial', (data.consecuenciaPotencial||[]).join(', ') + (data.otroConsecuencia ? `, Otro: ${data.otroConsecuencia}` : ''));
-  field('Prioridad', data.prioridad);
-  field('Acción propuesta', (data.accionPropuestaOpciones||[]).join(', '));
+  // ===== Encabezado (misma franja roja + logo + folio que la app) =====
+  const headerH = 70;
+  doc.setFillColor(...ROJO);
+  doc.rect(0, 0, pageW, headerH, 'F');
+
+  try {
+    const logoImg = document.querySelector('header .logo img');
+    if (logoImg && logoImg.src) {
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(margin, 14, 42, 42, 6, 6, 'F');
+      doc.addImage(logoImg.src, 'PNG', margin + 4, 18, 34, 34);
+    }
+  } catch (e) { /* si no se puede leer el logo, seguimos sin él */ }
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  doc.text('TARJETA DE SEGURIDAD', margin + 54, 34);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5);
+  doc.text('Safety & Security', margin + 54, 49);
+
+  const badgeW = 150, badgeH = 42, badgeX = pageW - margin - badgeW;
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(badgeX, 14, badgeW, badgeH, 6, 6, 'F');
+  doc.setTextColor(...ROJO);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5);
+  doc.text('N° AVISO DE TARJETA', badgeX + badgeW / 2, 28, { align: 'center' });
+  doc.setFontSize(16);
+  doc.text(String(correlativo), badgeX + badgeW / 2, 46, { align: 'center' });
+
+  y = headerH + 22;
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...GRIS_TEXTO);
+  doc.text(`Código: ${CODIGO_TARJETA}`, margin, y);
+  y += 20;
+
+  // ===== Helpers de contenido =====
+  function sectionTitle(title){
+    checkPageBreak(24);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...ROJO);
+    doc.text(title.toUpperCase(), margin, y);
+    doc.setDrawColor(...ROJO); doc.setLineWidth(1.3);
+    doc.line(margin, y + 4, pageW - margin, y + 4);
+    y += 18;
+  }
+
+  function metaGrid(pairs){
+    const colW = contentW / 2;
+    checkPageBreak(Math.ceil(pairs.length / 2) * 34);
+    const startY = y;
+    pairs.forEach(([label, value], i) => {
+      const col = i % 2, row = Math.floor(i / 2);
+      const x = margin + col * colW;
+      const yy = startY + row * 34;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...GRIS_TEXTO);
+      doc.text(label.toUpperCase(), x, yy);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...TEXTO);
+      doc.text(String(value || '-'), x, yy + 13);
+    });
+    y = startY + Math.ceil(pairs.length / 2) * 34 + 8;
+  }
+
+  function paragraph(value){
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(...TEXTO);
+    const lines = doc.splitTextToSize(String(value || '-'), contentW);
+    checkPageBreak(lines.length * 13 + 10);
+    doc.text(lines, margin, y);
+    y += lines.length * 13 + 16;
+  }
+
+  function chips(items, emptyText){
+    const list = (items || []).filter(Boolean);
+    if (!list.length){
+      checkPageBreak(20);
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(10); doc.setTextColor(...GRIS_TEXTO);
+      doc.text(emptyText || 'Sin selección', margin, y + 13);
+      y += 26;
+      return;
+    }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+    const rowH = 20, padX = 8, gap = 6;
+    let x = margin;
+    checkPageBreak(rowH);
+    list.forEach(text => {
+      const w = doc.getTextWidth(text) + padX * 2;
+      if (x + w > pageW - margin){ x = margin; y += rowH + gap; checkPageBreak(rowH); }
+      doc.setFillColor(...GRIS); doc.setDrawColor(...BORDE); doc.setLineWidth(0.7);
+      doc.roundedRect(x, y, w, rowH, 5, 5, 'FD');
+      doc.setTextColor(...TEXTO);
+      doc.text(text, x + padX, y + 13.5);
+      x += w + gap;
+    });
+    y += rowH + 16;
+  }
+
+  // ===== Contenido =====
+  metaGrid([
+    ['Área', data.area], ['Pasillo', data.pasillo],
+    ['Autor aviso', data.autorAviso], ['Fecha aviso', data.fechaAviso]
+  ]);
+
+  sectionTitle('Descripción anomalía');
+  paragraph(data.descripcionAnomalia);
+
+  sectionTitle('Peligro Detectado');
+  chips([...(data.peligroDetectado || []), ...(data.otroPeligro ? [`Otro: ${data.otroPeligro}`] : [])]);
+
+  sectionTitle('Condición detectada');
+  chips(data.condicionDetectada || []);
+
+  sectionTitle('Consecuencia potencial');
+  chips([...(data.consecuenciaPotencial || []), ...(data.otroConsecuencia ? [`Otro: ${data.otroConsecuencia}`] : [])]);
+
+  sectionTitle('Prioridad');
+  chips(data.prioridad ? [data.prioridad] : []);
+
+  sectionTitle('Acción propuesta');
+  chips(data.accionPropuestaOpciones || []);
+
+  // ===== Pie de página =====
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= totalPages; p++){
+    doc.setPage(p);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...GRIS_TEXTO);
+    doc.text(`Generado ${new Date().toLocaleString('es-CL')}  ·  Página ${p} de ${totalPages}`, margin, pageH - 20);
+  }
 
   return doc;
 }
