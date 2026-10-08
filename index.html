@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tarjeta de Seguridad — PPS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🦺%3C/text%3E%3C/svg%3E">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
     --rojo:#c0272d; --rojo-osc:#8a1519; --amarillo:#ffdb00;
@@ -77,6 +79,24 @@
     margin-bottom:10px; display:none;
   }
   .badge-offline.show{display:block;}
+  .ro-field{
+    width:100%; padding:9px 10px; border:1px solid var(--borde); border-radius:6px;
+    font-size:14px; background:#fafbfc; min-height:38px; line-height:1.3;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  #pdfStage{width:800px; background:#f5f6f7;}
+  #pdfStage header{padding:10px 16px; position:static; box-shadow:none;}
+  #pdfStage .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start; padding:12px;}
+  #pdfStage .col{display:flex; flex-direction:column; gap:10px; min-width:0;}
+  #pdfStage .card{padding:10px 12px; margin:0; border-radius:8px;}
+  #pdfStage .card h2{font-size:12px; margin:0 0 8px; padding-bottom:5px;}
+  #pdfStage label{font-size:11px; margin:6px 0 3px;}
+  #pdfStage .ro-field{padding:5px 8px; font-size:12px; min-height:26px;}
+  #pdfStage .row2{gap:8px;}
+  #pdfStage .checklist{gap:1px 10px; margin-top:2px;}
+  #pdfStage .chk{font-size:11.5px; padding:2px 0; gap:6px;}
+  #pdfStage .radiogrid{gap:5px; margin-top:2px;}
+  #pdfStage .radiopill{padding:5px 8px; font-size:11.5px;}
   .queue-count{
     background:var(--rojo); color:#fff; border-radius:10px; font-size:10px; padding:1px 6px; margin-left:5px;
   }
@@ -340,7 +360,99 @@ function collectData(){
   };
 }
 
-function generarPDF(data, correlativo){
+// ===== PDF idéntico a la app, en UNA hoja A4 =====
+// Se arma una copia compacta de solo lectura (encabezado + tarjetas en 2 columnas) con lo
+// que el usuario eligió/escribió, se fotografía una sola vez con html2canvas y se ajusta
+// a la hoja. Si hubiera mucho texto, se reduce lo justo para que siga cabiendo en 1 página.
+function construirReporte(correlativo){
+  const stage = document.createElement('div');
+  stage.id = 'pdfStage';
+  stage.style.cssText = 'position:absolute; left:-10000px; top:0;';
+
+  const hdr = document.querySelector('header').cloneNode(true);
+  const num = hdr.querySelector('.num');
+  num.removeAttribute('id');
+  num.textContent = correlativo;
+  stage.appendChild(hdr);
+
+  const grid = document.createElement('div');
+  grid.className = 'grid2';
+  const colIzq = document.createElement('div'); colIzq.className = 'col';
+  const colDer = document.createElement('div'); colDer.className = 'col';
+  grid.appendChild(colIzq); grid.appendChild(colDer);
+  stage.appendChild(grid);
+
+  document.querySelectorAll('#form .card').forEach((orig, idx) => {
+    const clone = orig.cloneNode(true);
+    const origCtrls = orig.querySelectorAll('input, select, textarea');
+    const cloneCtrls = clone.querySelectorAll('input, select, textarea');
+    origCtrls.forEach((o, i) => {
+      const c = cloneCtrls[i];
+      if (o.type === 'checkbox' || o.type === 'radio'){
+        c.checked = o.checked;
+        if (o.checked) c.setAttribute('checked', '');
+        return;
+      }
+      let txt = '';
+      if (o.tagName === 'SELECT'){
+        const opt = o.options[o.selectedIndex];
+        txt = (opt && o.value) ? opt.text : '';
+      } else if (o.type === 'date'){
+        txt = o.value ? o.value.split('-').reverse().join('/') : '';
+      } else {
+        txt = o.value;
+      }
+      const div = document.createElement('div');
+      div.className = 'ro-field';
+      if (o.tagName === 'TEXTAREA') div.style.minHeight = '44px';
+      div.textContent = txt || '\u00A0';
+      c.replaceWith(div);
+    });
+    // Columna izquierda: Datos, Descripción, Peligro. Derecha: el resto.
+    (idx < 3 ? colIzq : colDer).appendChild(clone);
+  });
+
+  document.body.appendChild(stage);
+  return { stage };
+}
+
+async function generarPDF(data, correlativo){
+  // Si por alguna razón html2canvas no cargó, se usa el PDF simple para no frenar el envío.
+  if (typeof html2canvas === 'undefined') return generarPDFSimple(data, correlativo);
+
+  const { jsPDF } = window.jspdf;
+  const { stage } = construirReporte(correlativo);
+  try{
+    const canvas = await html2canvas(stage, {
+      scale: 2, backgroundColor: '#f5f6f7', useCORS: true, logging: false,
+      onclone: (d) => { const st = d.getElementById('pdfStage'); st.style.left = '0'; st.style.top = '0'; }
+    });
+    const imgW = canvas.width / 2, imgH = canvas.height / 2;
+
+    const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const footer = 22;                                   // espacio para el pie
+    doc.setFillColor(245, 246, 247); doc.rect(0, 0, pageW, pageH, 'F');
+
+    // Ajuste a una sola hoja: primero a lo ancho; si no cabe a lo alto, se reduce.
+    let w = pageW, h = imgH * (pageW / imgW);
+    if (h > pageH - footer){ h = pageH - footer; w = imgW * (h / imgH); }
+    const x = (pageW - w) / 2;
+    doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, 0, w, h);
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(120, 120, 120);
+    doc.text(`${CODIGO_TARJETA}  ·  Generado ${new Date().toLocaleString('es-CL')}`, pageW / 2, pageH - 9, { align: 'center' });
+    return doc;
+  }catch(e){
+    console.error('Falló la captura del PDF, se usa el formato simple:', e);
+    return generarPDFSimple(data, correlativo);
+  }finally{
+    stage.remove();
+  }
+}
+
+function generarPDFSimple(data, correlativo){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -509,7 +621,11 @@ async function enviarTarjeta(){
   // evitar duplicados si dos personas emiten al mismo tiempo. Aquí el PDF se genera
   // una sola vez con un folio provisorio, y ese mismo payload sirve tanto para el
   // envío inmediato como, si falla la red, para guardarlo en la cola offline.
-  const doc = generarPDF(data, 'Pendiente');
+  statusEl.textContent = 'Generando PDF...';
+  const folioPrev = document.getElementById('folioBadge').textContent.trim();
+  const folioPDF = /^\d+$/.test(folioPrev) ? folioPrev : 'Pendiente';
+  const doc = await generarPDF(data, folioPDF);
+  statusEl.textContent = 'Emitiendo tarjeta...';
   const pdfBase64 = doc.output('datauristring').split(',')[1];
   const payload = { ...data, pdfBase64 };
 
